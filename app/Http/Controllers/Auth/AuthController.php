@@ -3,15 +3,17 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\UserResource;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Response;
 
 class AuthController extends Controller
 {
     public function __construct()
     {
-        $this->middleware('auth')->except(['register', 'login']);
+        $this->middleware('auth', ['except' => ['register', 'login',]]);
     }
 
     public function register(): JsonResponse
@@ -55,6 +57,11 @@ class AuthController extends Controller
         auth()->logout();
 
         return response()->json(['message' => 'Successfully logged out']);
+    }
+
+    public function user(): JsonResource
+    {
+        return UserResource::make(auth()->user());
     }
 
     protected function respondWithToken($token): JsonResponse

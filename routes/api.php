@@ -10,11 +10,12 @@ use App\Http\Controllers\{
     VisitorReservationController,
 };
 
-// Auth TODO:need testing.
+// Auth
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/refresh', [AuthController::class, 'refresh']);
 Route::post('/logout', [AuthController::class, 'logout']);
+Route::get('/user', [AuthController::class, 'user']);
 
 // Tags
 Route::get('/tags', TagController::class)->name('tags.index');
@@ -27,8 +28,12 @@ Route::post('/offices/{office}/images', [OfficeImageController::class, 'store'])
 Route::delete('/offices/{office}/images/{image:id}', [OfficeImageController::class, 'destroy'])->name('offices.images.delete');
 
 // Visitor Reservation
-Route::get('/reservations', [VisitorReservationController::class, 'index'])
-    ->middleware(['auth', 'verified'])->name('visitor.reservations.index');
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/reservations', [VisitorReservationController::class, 'index'])->name('visitor.reservations.index');
+    Route::post('/reservations', [VisitorReservationController::class, 'store'])->name('visitor.reservations.store');
+    Route::delete('/reservations/{reservation}', [VisitorReservationController::class, 'cancel'])->name('visitor.reservations.cancel');
+});
 
-// Host Reservation TODO:need testing.
-Route::get('/host/reservations', [HostReservationController::class, 'index'])->name('host.reservations.index');
+// Host Reservation
+Route::get('/host/reservations', [HostReservationController::class, 'index'])
+    ->middleware(['auth', 'verified'])->name('host.reservations.index');

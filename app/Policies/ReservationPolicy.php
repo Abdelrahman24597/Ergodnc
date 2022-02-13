@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Models\Reservation;
 use App\Models\User;
 use Illuminate\Auth\Access\HandlesAuthorization;
 
@@ -9,13 +10,18 @@ class ReservationPolicy
 {
     use HandlesAuthorization;
 
-    public function visitorIndex(User $user)
+    public function index(User $user)
     {
         return $user->can('reservation.index');
     }
 
-    public function hostIndex(User $user)
+    public function store(User $user)
     {
-        return $user->can('reservation.index');
+        return $user->can('reservation.store');
+    }
+
+    public function cancel(User $user, Reservation $reservation)
+    {
+        return $user->id == $reservation->user_id && $user->can('reservation.cancel');
     }
 }

@@ -10,7 +10,7 @@ class HostReservationController extends Controller
 {
     public function index(): JsonResource
     {
-        $this->authorize('hostIndex', Reservation::class);
+        $this->authorize('index', Reservation::class);
 
         request()->validate([
             'status' => 'in:' . Reservation::STATUS_ACTIVE . ',' . Reservation::STATUS_CANCELLED,

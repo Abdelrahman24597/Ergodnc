@@ -5,7 +5,10 @@ namespace Tests\Feature;
 use App\Models\Office;
 use App\Models\Reservation;
 use App\Models\User;
+use App\Notifications\NewHostReservation;
+use App\Notifications\NewVisitorReservation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
@@ -141,5 +144,222 @@ class VisitorReservationControllerTest extends TestCase
         ]))
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.id', $reservation->id);
+    }
+
+    /**
+     * @test
+     */
+    public function itMakesReservations()
+    {
+        $visitor = User::factory()->create()->givePermissionTo(Permission::create(['name' => 'reservation.store']));
+
+        $office = Office::factory()->create([
+            'price_per_day' => 1_000,
+            'monthly_discount' => 10,
+        ]);
+
+        $this->actingAs($visitor);
+
+        $this->postJson(route('visitor.reservations.store', [
+            'office_id' => $office->id,
+            'start_date' => now()->addDay()->toDateString(),
+            'end_date' => now()->addDays(40)->toDateString(),
+        ]))
+            ->assertCreated()
+            ->assertJsonPath('data.price', 36000)
+            ->assertJsonPath('data.user_id', $visitor->id)
+            ->assertJsonPath('data.office_id', $office->id)
+            ->assertJsonPath('data.status', Reservation::STATUS_ACTIVE);
+    }
+
+    /**
+     * @test
+     */
+    public function itCannotMakeReservationOnNonExistingOffice()
+    {
+        $visitor = User::factory()->create()->givePermissionTo(Permission::create(['name' => 'reservation.store']));
+
+        $this->actingAs($visitor);
+
+        $this->postJson(route('visitor.reservations.store', [
+            'office_id' => 10000,
+            'start_date' => now()->addDay()->toDateString(),
+            'end_date' => now()->addDays(40)->toDateString(),
+        ]))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['office_id'])
+            ->assertJsonCount(1, 'errors');
+
+    }
+
+    /**
+     * @test
+     */
+    public function itCannotMakeReservationOnOfficeThatBelongsToTheUser()
+    {
+        $visitor = User::factory()->create()->givePermissionTo(Permission::create(['name' => 'reservation.store']));
+
+        $office = Office::factory()->for($visitor)->create();
+
+        $this->actingAs($visitor);
+
+        $this->postJson(route('visitor.reservations.store', [
+            'office_id' => $office->id,
+            'start_date' => now()->addDay()->toDateString(),
+            'end_date' => now()->addDays(40)->toDateString(),
+        ]))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['office_id'])
+            ->assertJsonCount(1, 'errors');
+    }
+
+    /**
+     * @test
+     */
+    public function itCannotMakeReservationOnOfficeThatIsPendingOrHidden()
+    {
+        $visitor = User::factory()->create()->givePermissionTo(Permission::create(['name' => 'reservation.store']));
+
+        $pendingOffice = Office::factory()->create([
+            'approval_status' => Office::APPROVAL_PENDING,
+        ]);
+
+        $hiddenOffice = Office::factory()->create([
+            'is_hidden' => true,
+        ]);
+
+        $this->actingAs($visitor);
+
+        $this->postJson(route('visitor.reservations.store', [
+            'office_id' => $pendingOffice->id,
+            'start_date' => now()->addDay()->toDateString(),
+            'end_date' => now()->addDays(40)->toDateString(),
+        ]))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['office_id'])
+            ->assertJsonCount(1, 'errors');
+
+        $this->postJson(route('visitor.reservations.store', [
+            'office_id' => $hiddenOffice->id,
+            'start_date' => now()->addDay()->toDateString(),
+            'end_date' => now()->addDays(40)->toDateString(),
+        ]))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['office_id'])
+            ->assertJsonCount(1, 'errors');
+    }
+
+    /**
+     * @test
+     */
+    public function itCannotMakeReservationLessThan2Days()
+    {
+        $visitor = User::factory()->create()->givePermissionTo(Permission::create(['name' => 'reservation.store']));
+
+        $office = Office::factory()->create();
+
+        $this->actingAs($visitor);
+
+        $this->postJson(route('visitor.reservations.store', [
+            'office_id' => $office->id,
+            'start_date' => now()->addDay()->toDateString(),
+            'end_date' => now()->addDay()->toDateString(),
+        ]))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['end_date'])
+            ->assertJsonCount(1, 'errors');
+    }
+
+    /**
+     * @test
+     */
+    public function itCannotMakeReservationOnSameDay()
+    {
+        $visitor = User::factory()->create()->givePermissionTo(Permission::create(['name' => 'reservation.store']));
+
+        $office = Office::factory()->create();
+
+        $this->actingAs($visitor);
+
+        $this->postJson(route('visitor.reservations.store', [
+            'office_id' => $office->id,
+            'start_date' => now()->toDateString(),
+            'end_date' => now()->addDays(3)->toDateString(),
+        ]))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['start_date'])
+            ->assertJsonCount(1, 'errors');
+    }
+
+    /**
+     * @test
+     */
+    public function itMakeReservationFor2Days()
+    {
+        $visitor = User::factory()->create()->givePermissionTo(Permission::create(['name' => 'reservation.store']));
+
+        $office = Office::factory()->create();
+
+        $this->actingAs($visitor);
+
+        $this->postJson(route('visitor.reservations.store', [
+            'office_id' => $office->id,
+            'start_date' => now()->addDay()->toDateString(),
+            'end_date' => now()->addDays(2)->toDateString(),
+        ]))
+            ->assertCreated();
+    }
+
+    /**
+     * @test
+     */
+    public function itCannotMakeReservationThatsConflicting()
+    {
+        $visitor = User::factory()->create()->givePermissionTo(Permission::create(['name' => 'reservation.store']));
+
+        $fromDate = now()->addDays(2)->toDateString();
+        $toDate = now()->addDay(15)->toDateString();
+
+        $office = Office::factory()->create();
+
+        Reservation::factory()->for($office)->create([
+            'start_date' => now()->addDay(2)->toDateString(),
+            'end_date' => $toDate,
+        ]);
+
+        $this->actingAs($visitor);
+
+        $this->postJson(route('visitor.reservations.store', [
+            'office_id' => $office->id,
+            'start_date' => $fromDate,
+            'end_date' => $toDate,
+        ]))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['office_id'])
+            ->assertJsonCount(1, 'errors');
+    }
+
+    /**
+     * @test
+     */
+    public function itSendsNotificationsOnNewReservations()
+    {
+        Notification::fake();
+
+        $visitor = User::factory()->create()->givePermissionTo(Permission::create(['name' => 'reservation.store']));
+
+        $office = Office::factory()->create();
+
+        $this->actingAs($visitor);
+
+        $this->postJson(route('visitor.reservations.store', [
+            'office_id' => $office->id,
+            'start_date' => now()->addDay()->toDateString(),
+            'end_date' => now()->addDays(2)->toDateString(),
+        ]))
+            ->assertCreated();
+
+        Notification::assertSentTo($visitor, NewVisitorReservation::class);
+        Notification::assertSentTo($office->user, NewHostReservation::class);
     }
 }

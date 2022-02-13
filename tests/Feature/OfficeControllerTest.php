@@ -103,6 +103,22 @@ class OfficeControllerTest extends TestCase
     /**
      * @test
      */
+    public function itFiltersByTags()
+    {
+        $tags = Tag::factory(2)->create();
+        $office = Office::factory()->hasAttached($tags)->create();
+        Office::factory()->hasAttached($tags->first())->create();
+        Office::factory()->create();
+
+        $this->getJson(route('offices.index', ['tags' => $tags->pluck('id')->toArray()]))
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $office->id);
+    }
+
+    /**
+     * @test
+     */
     public function itIncludesImagesTagsAndUser()
     {
         $host = User::factory()->create();
